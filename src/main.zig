@@ -30,6 +30,47 @@ const Ipv4Frame = extern struct {
     dst_ip: [4]u8,
 };
 
+const ArpFrame = extern struct {
+    hardware_type: [2]u8,
+    protocol_type: [2]u8,
+    hardware_length: u8,
+    protocol_length: u8,
+    operation: [2]u8,
+    sender_hardware_address: [6]u8,
+    sender_protocol_address: [4]u8,
+    target_hardware_address: [6]u8,
+    target_protocol_address: [4]u8,
+};
+
+fn parse(comptime T: type, bytes: []const u8) T {
+    var result: T = undefined;
+    const fields = @typeInfo(T).@"struct".fields;
+    var offset: usize = 0;
+
+    inline for (fields) |field| {
+        const size = @sizeOf(field.type);
+        const field_bytes = bytes[offset .. offset + size];
+
+        switch (@typeInfo(field.type)) {
+            .int => {
+                const val = std.mem.readInt(field.type, field_bytes[0..size], .big);
+                @field(result, field.name) = val;
+            },
+            .array => {
+                @memcpy(&@field(result, field.name), field_bytes);
+            },
+            .@"enum" => |e| {
+                const val = std.mem.readInt(e.tag_type, field_bytes[0..size], .big);
+                @field(result, field.name) = @enumFromInt(val);
+            },
+            else => @compileError("unsupported field type: " ++ @typeName(field.type)),
+        }
+
+        offset += size;
+    }
+    return result;
+}
+
 pub fn main(init: std.process.Init) !void {
     var r = cli.AppRunner.init(&init);
     defer r.deinit();
@@ -104,7 +145,7 @@ fn run() !void {
         // var eth_header: [14]u8 = undefined;
         // if (n < @sizeOf(EthernetFrame)) break;
 
-        const e_pkt = @as(EthernetFrame, @bitCast(buf[0..@sizeOf(EthernetFrame)].*));
+        const e_pkt = parse(EthernetFrame, &buf);
 
         // switch on ethertype
         // if 0x0800
@@ -114,7 +155,7 @@ fn run() !void {
             // const version = (e_pkt.payload[0] >> 4 & 0x0F);
             // const ihl = (e_pkt.payload[0] & 0x0F);
 
-            const ip_frame = @as(Ipv4Frame, @bitCast(e_pkt.payload[0..@sizeOf(Ipv4Frame)].*));
+            const ip_frame = parse(Ipv4Frame, e_pkt.payload[0..@sizeOf(Ipv4Frame)]);
             std.log.info("version: {d}", .{ip_frame.version_and_ihl >> 4 & 0x0F});
             std.log.info("ihl: {d}", .{ip_frame.version_and_ihl & 0x0F});
             std.log.info("type of service: {x}", .{ip_frame.type_of_service});
@@ -138,6 +179,39 @@ fn run() !void {
             const dst_ip = try bin_to_ip(destination_ip_int, &destination_ip_buf);
 
             std.log.info("Destination IP: {s}", .{dst_ip});
+        }
+
+        if (ethertype == 0x0806) {
+            const arp_frame = parse(ArpFrame, e_pkt.payload[0..@sizeOf(ArpFrame)]);
+
+            std.log.info("Hardware Type: {x}", .{arp_frame.hardware_type});
+            std.log.info("Protocol Type: {x}", .{arp_frame.protocol_type});
+            std.log.info("Hardware Length: {x}", .{arp_frame.hardware_length});
+            std.log.info("Protocol Type: {x}", .{arp_frame.protocol_type});
+            std.log.info("Operation: {x}", .{arp_frame.operation});
+
+            const sender_mac = arp_frame.sender_hardware_address;
+            std.log.info("Sender Hardware Address: {x:0>2}:{x:0>2}:{x:0>2}:{x:0>2}:{x:0>2}:{x:0>2}", .{
+                sender_mac[0], sender_mac[1], sender_mac[2], sender_mac[3], sender_mac[4], sender_mac[5],
+            });
+
+            const sender_ip_int = std.mem.readInt(u32, &arp_frame.sender_protocol_address, .big);
+
+            var sender_ip_buf: [15]u8 = undefined;
+            const sender_ip = try bin_to_ip(sender_ip_int, &sender_ip_buf);
+
+            std.log.info("Sender Protocol Address: {s}", .{sender_ip});
+
+            const target_mac = arp_frame.target_hardware_address;
+            std.log.info("Target Hardware Address: {x:0>2}:{x:0>2}:{x:0>2}:{x:0>2}:{x:0>2}:{x:0>2}", .{
+                target_mac[0], target_mac[1], target_mac[2], target_mac[3], target_mac[4], target_mac[5],
+            });
+            const target_ip_int = std.mem.readInt(u32, &arp_frame.target_protocol_address, .big);
+
+            var target_ip_buf: [15]u8 = undefined;
+            const target_ip = try bin_to_ip(target_ip_int, &target_ip_buf);
+
+            std.log.info("Target Protocol Address: {s}", .{target_ip});
         }
         std.debug.print("\n", .{});
     }
