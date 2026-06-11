@@ -2,7 +2,6 @@ const std = @import("std");
 const cli = @import("cli");
 
 var config = struct {
-    port: u16 = undefined,
     interface: []const u8 = undefined,
 }{};
 
@@ -79,12 +78,6 @@ pub fn main(init: std.process.Init) !void {
         .command = cli.Command{
             .name = "zigdump",
             .options = try r.allocOptions(&.{
-                .{
-                    .long_name = "port",
-                    .help = "port to listen to",
-                    .required = true,
-                    .value_ref = r.mkRef(&config.port),
-                },
                 .{
                     .long_name = "interface",
                     .help = "interface to listen to",
