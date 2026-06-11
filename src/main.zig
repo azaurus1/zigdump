@@ -94,7 +94,6 @@ pub fn main(init: std.process.Init) !void {
 }
 
 fn run() !void {
-    std.log.info("listening on :{d}", .{config.port});
 
     // Get the socket fd
     const socket_result = std.os.linux.socket(std.os.linux.AF.PACKET, std.os.linux.SOCK.RAW, std.mem.nativeToBig(u32, 0x0003));
